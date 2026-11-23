@@ -1,0 +1,47 @@
+name: Build Jebba ACC Windows Installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Reconstruct application source package
+        shell: pwsh
+        run: |
+          $parts = Get-ChildItem "build-package/part*.b64" | Sort-Object Name
+          $encoded = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ""
+          $bytes = [Convert]::FromBase64String($encoded)
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP/jebba-source.tar.gz", $bytes)
+          tar -xzf "$env:RUNNER_TEMP/jebba-source.tar.gz"
+          Copy-Item -Path "jebba-acc-windows-app/*" -Destination "." -Recurse -Force
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Windows installer
+        run: npm run dist
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jebba-ACC-Windows-Installer
+          path: release/*.exe
+          if-no-files-found: error
+          retention-days: 14
